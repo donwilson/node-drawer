@@ -1,0 +1,766 @@
+	
+	var canvas,
+		context,
+		can_render = true,
+		window_width = 0, window_height = 0,
+		window_halfWidth = 0, window_halfHeight = 0,
+		mouse_screenPosition = {'x': 0, 'x': 0},
+		drawings = {},   // {$DRAWING_KEY$: Pen instance}
+		//user_ids = [],   // [{drawing_key: $DRAWING_KEY$, name: "..."}]
+		player_drawing_key,
+		is_drawing = false,
+		input_active = {},
+		game_fps = 0,
+		max_user_name_length = 12;
+	
+	// create canvas & context
+	canvas = document.getElementById('screen');
+	context = canvas.getContext('2d');
+	
+	
+	function createCookie(name, value, days, path) {
+		var expires = "",
+			date;
+		
+		path = path || "/";
+		
+		if(days) {
+			date = new Date();
+			date.setTime((date.getTime() + (days * 24 * 60 * 60 * 1000)));
+			
+			expires = "; expires="+ date.toGMTString();
+		}
+		
+		document.cookie = name +"="+ value + expires +"; path="+ path;
+	}
+	
+	function readCookie(name) {
+		var nameEQ = name +"=",
+			ca = document.cookie.split(";"),
+			j, k, c;
+		
+		for(j=0, k = ca.length; j < k; j++) {
+			c = ca[ j ];
+			
+			while (c.charAt(0) == " ") {
+				c = c.substring(1, c.length);
+			}
+			
+			if(c.indexOf(nameEQ) == 0) {
+				return c.substring(nameEQ.length, c.length);
+			}
+		}
+		
+		return null;
+	}
+	
+	function eraseCookie(name) {
+		createCookie(name, "", -1);
+	}
+	
+	function randomBetween(min, max) {
+		return Math.floor((Math.random() * (max - min + 1) + min));
+	}
+	
+	function calibrateCameraSize(cam_width, cam_height) {
+		window_width = cam_width;
+		window_height = cam_height;
+		
+		window_halfWidth = (window_width * 0.5);
+		window_halfHeight = (window_height * 0.5);
+		
+		canvas.width = window_width;
+		canvas.height = window_height;
+	}
+	
+	function windowXtoGameX(x) {
+		return (x - window_halfWidth);
+	}
+	
+	function windowYtoGameY(y) {
+		return (y - window_halfHeight);
+	}
+	
+	// [r, g, b]
+	var colors = [
+		[255, 130,   7],   // orange
+		[255,   7, 139],   // magenta
+		//[254, 255,   0],   // yellow
+		[  7, 255, 171],   // aquamarine
+		[255,  14,   7],   // red
+		[ 81, 255,   7],   // lime
+		[  7, 191, 255],   // pale blue
+		[  7, 133, 255],   // blue
+		[205,   7, 255]   // purple
+	];
+	
+	function chooseRandomColor() {
+		return colors[ Math.floor(Math.random() * colors.length) ];
+		//return [Math.floor(Math.random() * (255 - 0 + 1) + 0), Math.floor(Math.random() * (255 - 0 + 1) + 0), Math.floor(Math.random() * (255 - 0 + 1) + 0)]   // truly random color
+	}
+	
+	function darkenColor(color, strokeDiff) {
+		strokeDiff = strokeDiff || 0.85;
+		
+		return [
+			Math.max(0, Math.round( (color[0] * strokeDiff) )),
+			Math.max(0, Math.round( (color[1] * strokeDiff) )),
+			Math.max(0, Math.round( (color[2] * strokeDiff) ))
+		];
+	}
+	
+	// turn raw text username into usable username
+	function cleanUsername(name) {
+		name = $.trim( name );
+		name = name.substring(0, max_user_name_length);
+		
+		return name;
+	}
+	
+	// add a player into drawings object
+	function setPlayer(drawing_key, name, color) {
+		var j, k;
+		
+		drawing_key = drawing_key || false;
+		
+		name = cleanUsername(name);
+		
+		if(false !== drawing_key) {
+			for(k in drawings) {
+				if(drawings.hasOwnProperty(k)) {
+					if(k == drawing_key) {
+						color = color || false;
+						
+						drawings[ k ].setName(name);
+						
+						if(false !== color) {
+							drawings[ drawing_key ].setColor(color);
+						}
+						
+						return drawing_key;
+					}
+				}
+			}
+		}
+		
+		if(false === drawing_key) {
+			// create new drawing_key
+			drawing_key = randomBetween(1, 99999);
+		}
+		
+		drawings[ drawing_key ] = new Pen(name, color);
+		
+		return drawing_key;
+	}
+	
+	// remove a player from drawings object
+	function removePlayer(drawing_key) {
+		var j, k;
+		
+		if(!drawing_key) {
+			return;
+		}
+		
+		delete drawings[ drawing_key ];
+	}
+	
+	
+	
+	/*** Pens ***/
+	
+		function Pen(name, color) {
+			this.setName(name);
+			this.setColor(color);
+		}
+		
+		Pen.prototype = {
+			'lines':				[],   // simple array containing line objects {'color': "rgb(...)", 'thickness': 1, 'points': [x1, y1, x2, y2, ..., xn, yn]}
+			'line_key':				0,   // the latest this.lines key to add points to
+			'thickness':			2,
+			'color':				"",
+			'name':					"",
+			'is_drawing':			false,
+			'drawing_stay_seconds':	1,   // number of seconds after drawing stops that it should remain full opacity
+			'drawing_fade_seconds':	0.7,   // number of seconds a drawing should 
+			'draw_life':			0,   // number of seconds left to draw
+			'draw_opacity':			1,   // 0-1 draw opacity	
+			
+			'setColor': function(newColor) {
+				newColor = newColor || false;
+				
+				if(!newColor || (newColor.length != 3) || (!(newColor instanceof Array))) {
+					newColor = chooseRandomColor();
+				}
+				
+				this.color = "rgb("+ newColor.join(",") +")";
+			},
+			
+			'getColor': function() {
+				return this.color;
+			},
+			
+			'_resetPen': function() {
+				// totally reset pen data
+				this.lines = [];   // reset lines array
+				this.line_key = 0;   // reset points array key
+				this.draw_life = 0;   // reset draw life to 0
+				this.draw_opacity = 1;   // reset opacity
+			},
+			
+			'setName': function(new_name) {
+				new_name = new_name || "";
+				
+				this.name = new_name.substring(0, max_user_name_length);
+			},
+			
+			'getName': function() {
+				if("" === this.name) {
+					return "Unnamed artist";
+				}
+				
+				return this.name;
+			},
+			
+			'startDrawing': function(x, y) {
+				//console.log("Start: "+ x +"x"+ y);
+				
+				this.is_drawing = true;
+				
+				this.lines[ this.line_key ] = {
+					'color':		this.color,
+					'thickness':	this.thickness,
+					'points':		[x, y]
+				};
+				
+				this.draw_life = 0;
+				this.draw_opacity = 1;
+			},
+			
+			'movePen': function(x, y) {
+				//console.log("Move: "+ x +"x"+ y);
+				
+				this.lines[ this.line_key ].points.push(x);
+				this.lines[ this.line_key ].points.push(y);
+			},
+			
+			'stopDrawing': function() {
+				//console.log("End drawing");
+				
+				this.line_key += 1;   // move to next lines key
+				this.is_drawing = false;
+				
+				// set duration of how long drawing should remain on screen
+				this.draw_life = (this.drawing_stay_seconds + this.drawing_fade_seconds);
+			},
+			
+			'isDrawing': function() {
+				return this.is_drawing;
+			},
+			
+			'update': function(dt) {
+				if(!this.is_drawing && (this.draw_life > 0)) {
+					this.draw_life -= dt;
+					
+					if(this.draw_life >= this.drawing_stay_seconds) {
+						this.draw_opacity = 1;
+					} else if(this.draw_life > 0) {
+						this.draw_opacity = (this.draw_life / this.drawing_fade_seconds);
+					} else {
+						this._resetPen();
+					}
+				}
+			},
+			
+			'draw': function() {
+				var x, y, j, k;
+				
+				if(!this.is_drawing && !this.draw_life) {
+					return;
+				}
+				
+				context.globalAlpha = this.draw_opacity;
+				
+				for(x = 0, y = this.lines.length; x < y; x++) {
+					context.beginPath();
+					
+					context.lineCap = "round";
+					
+					context.strokeStyle = this.lines[ x ].color;
+					context.lineWidth = this.lines[ x ].thickness;
+					
+					context.moveTo(this.lines[ x ].points[0], this.lines[ x ].points[1]);
+					
+					for(j = 2, k = this.lines[ x ].points.length; j < k; j += 2) {
+						// @todo - save d(x/y) instead of raw points
+						context.lineTo(this.lines[ x ].points[ j ], this.lines[ x ].points[ (j + 1) ]);
+					}
+					
+					context.stroke();
+				}
+				
+				context.globalAlpha = 1;
+			}
+		};
+	
+	
+	function draw_grid() {
+		var grid_size = 20;
+		
+		// save context before translating context
+		context.save();
+		
+		context.translate((window_halfWidth * -1), (window_halfHeight * -1));
+		
+		var grid_start_x = 0;
+		var grid_start_y = 0;
+		
+		// camera dimensions
+		grid_start_x -= ( ( window_halfWidth * -1 ) % grid_size );
+		grid_start_y -= ( ( window_halfHeight * -1 ) % grid_size );
+		
+		context.beginPath();
+		context.lineWidth = 1;
+		context.strokeStyle = "#dee6ea";
+		
+		for(var grid_x = grid_start_x; grid_x <= window_width; grid_x += grid_size) {
+			context.moveTo(grid_x, 0);
+			context.lineTo(grid_x, window_height);
+		}
+		
+		for(var grid_y = grid_start_y; grid_y <= window_height; grid_y += grid_size) {
+			context.moveTo(0, grid_y);
+			context.lineTo(window_width, grid_y);
+		}
+		
+		context.stroke();
+		
+		context.restore();
+	}
+	
+	function draw_leaderboard() {
+		var windowPadding = 12,
+			boxPadding = 9,
+			fontSize = 11,
+			headerFontSize = 16,
+			headerLineSpacing = 10,
+			lineSpacing = 10,
+			boxTransparency = 0.3,
+			boxInnerWidth = 150,
+			numNames = Object.keys(drawings).length || 0,
+			userColorDiagramWidth = 12, userColorDiagramHeight = 12,
+			boxWidth, boxHeight, lineHeightOffset;
+		
+		boxWidth = (boxPadding + boxInnerWidth + boxPadding);
+		boxHeight = (boxPadding + headerFontSize + headerLineSpacing + (lineSpacing * Math.max(0, (numNames - 1))) + (fontSize * numNames) + boxPadding);
+		
+		context.save();
+		
+		context.scale(1, 1);
+		context.translate( (window_halfWidth - windowPadding - boxWidth), ((window_halfHeight * -1) + windowPadding) );
+		
+		// draw text container box
+		context.beginPath();
+		
+		// background
+		context.rect(0, 0, boxWidth, boxHeight);
+		context.fillStyle = "rgba(0, 0, 0, "+ boxTransparency +")";
+		context.fill();
+		
+		// header
+		context.font = "bold "+ headerFontSize +"pt Verdana";
+		context.fillStyle = "#ffffff";
+		context.textAlign = "left";
+		context.textBaseline = "hanging";
+		context.fillText("Artists", boxPadding, boxPadding);
+		
+		// draw text
+		j = 0;
+		
+		for(k in drawings) {
+			if(k == player_drawing_key) {
+				context.font = "bold "+ fontSize +"pt Verdana";
+			} else {
+				context.font = "normal "+ fontSize +"pt Verdana";
+			}
+			
+			lineHeightOffset = (boxPadding + headerFontSize + headerLineSpacing + ((lineSpacing + fontSize) * j));
+			drawer_name = drawings[ k ].getName();
+			
+			if("" == drawer_name) {
+				drawer_name = "Unnamed artist";
+			}
+			
+			context.beginPath();
+			
+			// player color
+			context.rect(boxPadding, lineHeightOffset, userColorDiagramWidth, userColorDiagramHeight);
+			context.fillStyle = drawings[ k ].getColor();
+			context.fill();
+			
+			// player name
+			context.fillStyle = "#ffffff";
+			context.textAlign = "left";
+			context.textBaseline = "hanging";
+			context.fillText(drawer_name, (boxPadding + userColorDiagramWidth + (boxPadding / 2)), lineHeightOffset);
+			
+			j++;
+		}
+		
+		context.restore();
+	}
+	
+	function draw_game_fps() {
+		var playerScoreText = Math.floor(game_fps) +" FPS",
+			fontSize = 12,
+			windowPadding = 12,
+			boxPadding = 6,
+			boxTransparency = 0.3;
+		
+		context.save();
+		
+		context.scale(1, 1);
+		context.translate( ((window_halfWidth * -1) + windowPadding), ((window_halfHeight * -1) + windowPadding) );
+		
+		// setup font context
+		context.font = "normal "+ fontSize +"pt Verdana";
+		
+		var textMetrics = context.measureText(playerScoreText);
+		
+		// draw text container box
+		context.beginPath();
+		
+		context.rect(0, 0, (boxPadding + textMetrics.width + boxPadding), (boxPadding + fontSize + boxPadding));
+		context.fillStyle = "rgba(0, 0, 0, "+ boxTransparency +")";
+		context.fill();
+		
+		// draw text
+		context.fillStyle = "#ffffff";
+		context.textAlign = "left";
+		context.textBaseline = "hanging";
+		context.fillText(playerScoreText, boxPadding, boxPadding);
+		
+		context.restore();
+	}
+	
+	
+	/*** Game Logic ***/
+	
+	function update(dt) {
+		//console.log("mouse_screenPosition = "+ mouse_screenPosition.x +"x"+ mouse_screenPosition.y);
+		
+		// update pens
+		for(var obj in drawings) {
+			drawings[ obj ].update(dt);
+		}
+	}
+	
+	function draw() {
+		context.clearRect(0, 0, canvas.width, canvas.height);
+		
+		context.save();
+		
+		context.translate(window_halfWidth, window_halfHeight);
+		
+		// draw grid
+		draw_grid();
+		
+		// draw pens
+		for(var obj in drawings) {
+			drawings[ obj ].draw();
+		}
+		
+		// draw leaderboard
+		draw_leaderboard();
+		
+		// draw fps
+		draw_game_fps();
+		
+		context.restore();
+	}
+	
+	
+	var loop__time = new Date().getTime();
+	var fps = 0, last_fps = 0;
+	
+	function game_loop() {
+		var now = new Date().getTime(),
+			dt = ((now - loop__time) / 1000);
+		
+		window.requestAnimationFrame(game_loop);
+		
+		fps += 1;
+		last_fps += dt;
+		
+		if(last_fps > 1) {
+			//console.log("FPS: "+ fps);
+			game_fps = fps;
+			
+			fps = 0;
+			last_fps %= 1;
+		}
+		
+		loop__time = now;
+		
+		if(can_render) {
+			// update logic
+			update(dt);
+			
+			// draw
+			draw();
+		}
+	}
+	
+	
+	jQuery(document).ready(function($) {
+		var canvas_el = $("#screen"),
+			user_name;
+		
+		$(window).on({
+			'load': function() {
+				// window finishes loading
+				is_drawing = false;
+				
+				calibrateCameraSize($(window).width(), $(window).height());
+			},
+			'resize': function() {
+				// resize window
+				is_drawing = false;
+				
+				calibrateCameraSize($(window).width(), $(window).height());
+			},
+			'focus': function() {
+				// browser gains focus
+				is_drawing = false;
+			},
+			'blur': function() {
+				// browser loses focus
+				is_drawing = false;
+			}
+		});
+		
+		// capture mouse events
+		$(document).on({
+			'mousedown': function(e) {
+				if(e.which == 1) {
+					//can_render = !can_render;
+					
+					// start player drawing
+					drawings[ player_drawing_key ].startDrawing(windowXtoGameX(e.pageX), windowYtoGameY(e.pageY));
+				}
+			},
+			'mousemove': function(e) {
+				if(drawings[ player_drawing_key ].isDrawing()) {
+					// Player is drawing, move player pen
+					drawings[ player_drawing_key ].movePen(windowXtoGameX(e.pageX), windowYtoGameY(e.pageY));
+				}
+				
+				//mouse_screenPosition.x = e.pageX;
+				//mouse_screenPosition.y = e.pageY;
+			},
+			'mouseup': function(e) {
+				if(e.which == 1) {
+					// Stop player from drawing
+					drawings[ player_drawing_key ].stopDrawing();
+				}
+			}
+		});
+		
+		// capture keydown
+		$(document).on('keydown', function(e) {
+			// prevent repeated key calls
+			input_active[ e.which ] = true;
+		});
+		
+		// release input status
+		$(document).on('keyup', function(e) {
+			input_active[ e.which ] = false;
+		});
+		
+		
+		// event: change name button
+		$("#user_options").on('click', ".button_change_name", function(e) {
+			var new_name = prompt("New Name");
+			
+			e.preventDefault();
+			e.stopPropagation();
+			
+			if(new_name === null) {
+				// user pressed cancel
+				return;
+			}
+			
+			// ask user for new name
+			player_drawing_key = setPlayer(player_drawing_key, new_name);
+			
+			// update user's name legend
+			$("#user_name_legend").text(drawings[ player_drawing_key ].getName());
+		});
+		
+		// event: change color button
+		$("#user_options").on('click', ".button_change_color", function(e) {
+			var color_choices = $("#user_color_choices");
+			
+			e.preventDefault();
+			e.stopPropagation();
+			
+			if(color_choices.is(":hidden")) {
+				// attach click outside element autohide event
+				$(document).on('mousedown.chgColor_clickOut', function(e) {
+					//console.log("chgColor_clickOut event");
+					
+					if(!color_choices.is(e.target) && !color_choices.has(e.target).length) {
+						color_choices.slideToggle(400);
+						
+						$(document).off('mousedown.chgColor_clickOut');
+					}
+				});
+			}
+			
+			color_choices.slideToggle(400);
+		});
+		
+		// event: select color and hide color chooser
+		$("#user_options").on('click', "#user_color_choices .select_user_color", function(e) {
+			var color_raw = $(this).attr('data-color') || false,
+				color;
+			
+			e.preventDefault();
+			e.stopPropagation();
+			
+			$("#user_color_choices").slideToggle(400);
+			$(document).off('mousedown.chgColor_clickOut');
+			
+			if(false === color_raw) {
+				return;
+			}
+			
+			color = color_raw;
+			color = color.replace(/[^0-9,]+/g, "");
+			color = color.split(",", 3);
+			
+			console.log(color);
+			
+			if(color.length != 3) {
+				return;
+			}
+			
+			drawings[ player_drawing_key ].setColor(color);
+			
+			$("#user_color_legend").css({
+				'background-color':	"rgb("+ color.join(",") +")"
+			});
+		});
+		
+		
+		
+		// find previously used username
+		if(null === (user_name = readCookie('drawer_name'))) {
+			user_name = prompt("Name:");
+		}
+		
+		user_name = cleanUsername(user_name);
+		
+		createCookie('drawer_name', user_name, 10);
+		
+		
+		
+		// create drawing object for user
+		//player_drawing_key = setPlayer(false, prompt("Name:"), false);
+		player_drawing_key = setPlayer(false, "Don", false);
+		
+		
+		// Generate user options
+		(function() {
+			var html = [],
+				player_color = drawings[ player_drawing_key ].getColor(),
+				//player_thickness = drawings[ player_drawing_key ].getThickness(),
+				player_name = drawings[ player_drawing_key ].getName();
+			
+			// change color
+			html.push("<li class=\"user_option__choose_color\">");
+			html.push("<div id=\"user_color_choices\">");
+			html.push("<div class=\"title\">Choose a color:</div>");
+			html.push("<ul class=\"colors\">");
+			
+			// Fill in defined colors into user color changer
+			$.each(colors, function(index, value) {
+				var color_string = "rgb("+ value.join(",") +")";
+				
+				html.push("<li>");
+				html.push("<a href=\"#\" title=\""+ color_string +"\" class=\"select_user_color "+ ((color_string == player_color)?" selected ":"") +"\" style=\"background-color: "+ color_string +";\" data-color=\""+ color_string +"\">"+ color_string +"</a>");
+				html.push("</li>");
+			});
+			
+			html.push("</ul>");
+			html.push("</div>");
+			html.push("<a href=\"#\" class=\"option_button button_change_color\"><span id=\"user_color_legend\" style=\"background-color: "+ drawings[ player_drawing_key ].getColor() +";\">&nbsp;</span> <span class=\"underline\">change color</span></a>");
+			html.push("</li>");
+			
+			/*
+			// @TODO:
+			// change thickness
+			html.push("<li class=\"user_option__choose_thickness\">");
+			html.push("<ul id=\"user_thickness_choices\">");
+			
+			// Fill in defined colors into user color changer
+			$.each(thicknesses, function(index, value) {
+				html.push("<li>");
+				html.push("<a href=\"#\" title=\""+ value +"\" class=\"select_user_thickness "+ ((value == player_thickness)?" selected ":"") +"\" data-thickness=\""+ value +"\">"+ value +"</a>");
+				html.push("</li>");
+			});
+			
+			html.push("</ul>");
+			html.push("<a href=\"#\" class=\"option_button button_change_thickness\"><span id=\"user_thickness_legend\">"+ player_thickness +"</span> <span class=\"underline\">change thickness</span></a>");
+			html.push("</li>");
+			*/
+			
+			
+			// change name
+			html.push("<li class=\"user_option__choose_name\">");
+			html.push("<a href=\"#\" class=\"option_button button_change_name\"><span id=\"user_name_legend\">"+ $("<div/>").html(drawings[ player_drawing_key ].getName()).text() +"</span> <span class=\"underline\">change name</span></a>");
+			html.push("</li>");
+			
+			$("#user_options").append( html.join("") );
+		}());
+		
+		/*
+			connection = new WebSocket("ws://"+window.location.hostname+":9008");
+			
+			connection.onopen = function() {
+				console.log("Connection opened");
+				connection.send(nickname);
+				
+				document.getElementById("form").onsubmit = function (event) {
+					var msg = document.getElementById("msg");
+					
+					if(msg.value) {
+						connection.send(msg.value)
+					}
+					
+					msg.value = "";
+					
+					event.preventDefault();
+				}	;
+			};
+			
+			connection.onclose = function() {
+				console.log("Connection closed");
+			};
+			
+			connection.onerror = function() {
+				console.error("Connection error");
+			};
+			
+			connection.onmessage = function (event) {
+				var div = document.createElement("div");
+				div.textContent = event.data;
+				
+				document.body.appendChild(div);
+			};
+		*/
+		
+		
+		// start game
+		game_loop();
+	});
+	

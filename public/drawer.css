@@ -1,0 +1,46 @@
+	
+	/* http://meyerweb.com/eric/tools/css/reset/   v2.0 | 20110126   License: none (public domain) */
+	html, body, div, span, applet, object, iframe, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, abbr, acronym, address, big, cite, code, del, dfn, em, img, ins, kbd, q, s, samp, small, strike, strong, sub, sup, tt, var, b, u, i, center, dl, dt, dd, ol, ul, li, fieldset, form, label, legend, table, caption, tbody, tfoot, thead, tr, th, td, article, aside, canvas, details, embed, figure, figcaption, footer, header, hgroup, menu, nav, output, ruby, section, summary, time, mark, audio, video { margin: 0; padding: 0; border: 0; font-size: 100%; font: inherit; vertical-align: baseline; }
+	article, aside, details, figcaption, figure, footer, header, hgroup, menu, nav, section { display: block; } body { line-height: 1; } ol, ul { list-style: none; } blockquote, q { quotes: none; } blockquote:before, blockquote:after, q:before, q:after { content: ''; content: none; } table { border-collapse: collapse; border-spacing: 0; }
+	
+	
+	body { margin: 0; padding: 0; overflow: hidden; }
+	
+	#screen { width: 100%; height: 100%; background-color: #f2fbff; }
+	#user_options { list-style: none; margin: 0; padding: 0; position: absolute; bottom: 10px; right: 10px; display: inline-block; }
+		#user_options > li { list-style: none; display: inline-block; margin: 0; padding: 0 0 0 10px; position: relative; }
+			#user_options .option_button { display: inline-block; background-color: #ffffff; border: 1px solid #e2e2e2; padding: 5px; font-family: Verdana; font-weight: normal; font-size: 12px; line-height: 12px; color: #3366CC; text-decoration: none; }
+				#user_options .option_button .underline { font-size: 11px; text-transform: lowercase; vertical-align: bottom; }
+				#user_options .option_button:hover { text-decoration: none; }
+					#user_options .option_button:hover .underline { text-decoration: underline; }
+			
+			/* Color chooser */
+			#user_color_choices { position: absolute; bottom: 24px; right: 0; background: #ffffff; border: 1px solid #e2e2e2; display: none; padding: 10px 5px 5px 5px; }
+				#user_color_choices .title { display: block; padding: 0 10px; margin-bottom: 5px; font-family: Verdana; font-weight: bold; font-size: 12px; line-height: 12px; color: #303030; }
+				#user_color_choices .colors { display: table; width: 160px; }
+					#user_color_choices .colors > li { display: inline-block; width: 30px; height: 30px; margin: 3px; padding: 0; border: 2px solid #ffffff; }
+						#user_color_choices .colors > li.selected, #user_color_choices .colors > li:hover { border-color: #696969; }
+						#user_color_choices .colors > li .select_user_color { display: inline-block; vertical-align: top; width: 30px; height: 30px; cursor: pointer; text-indent: -9999px; font-size: 1px; color: transparent; outline: none; }
+			#user_color_legend { display: inline-block; vertical-align: middle; width: 12px; height: 12px; margin-right: 5px; }
+			
+			/* Thickness */
+			#user_options .line_preview { display: inline-block; }
+				#user_options .line_preview .preview { text-align: center; display: inline-block; vertical-align: middle; text-align: center; width: 14px; height: 12px; }
+					#user_options .line_preview .preview .line { display: inline-block; vertical-align: top; height: 12px; margin: 0 auto; text-indent: -9999px; font-size: 1px; color: transparent; }
+				#user_options .line_preview .value { display: inline-block; vertical-align: middle; font-family: Verdana; line-height: 12px; font-size: 12px; font-weight: bold; color: #303030; }
+			#user_thickness_choices { position: absolute; bottom: 24px; left: 10px; /* left compensates for parent padding-left */ background: #ffffff; border: 1px solid #e2e2e2; display: none; padding: 5px 5px 3px 5px; }
+				#user_thickness_choices > li { display: block; position: relative; margin: 0 0 2px 0; padding: 0; }
+					#user_thickness_choices > li .select_user_thickness { display: block; padding: 3px 5px; vertical-align: top; cursor: pointer; outline: none; }
+						#user_thickness_choices > li.selected .select_user_thickness { background-color: #696969; }
+							#user_thickness_choices > li.selected .select_user_thickness .line_preview .value { color: #ffffff; }
+						#user_thickness_choices:hover > li.selected .select_user_thickness { background: transparent; }
+							#user_thickness_choices:hover > li.selected .select_user_thickness .line_preview .value { color: #303030; }
+						#user_thickness_choices > li .select_user_thickness:hover { background-color: #696969 !important; }
+							#user_thickness_choices > li:hover .select_user_thickness .line_preview .value { color: #ffffff !important; }
+			#user_thickness_legend { display: inline-block; vertical-align: middle; font-size: 12px; font-weight: bold; color: #303030; margin-right: 5px; }
+				#user_thickness_legend.line_preview .value { display: none; }
+			
+			/* Name chooser */
+			#user_name_legend { display: inline-block; vertical-align: middle; font-family: Verdana; font-weight: bold; font-size: 12px; line-height: 12px; color: #303030; text-decoration: none; margin-right: 5px; }
+	
+	

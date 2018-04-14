@@ -1,0 +1,426 @@
+	
+	var canvas,
+		context,
+		can_render = true,
+		window_width = 0, window_height = 0,
+		window_halfWidth = 0, window_halfHeight = 0,
+		mouse_screenPosition = {'x': 0, 'x': 0},
+		drawings = {},
+		player_drawing_id,
+		is_drawing = false,
+		input_active = {},
+		game_fps = 0;
+	
+	// create canvas & context
+	canvas = document.getElementById('screen');
+	context = canvas.getContext('2d');
+	
+	
+	function randomBetween(min, max) {
+		return Math.floor(Math.random()*(max-min+1)+min);
+	}
+	
+	function calibrateCameraSize(cam_width, cam_height) {
+		window_width = cam_width;
+		window_height = cam_height;
+		
+		window_halfWidth = (window_width * 0.5);
+		window_halfHeight = (window_height * 0.5);
+		
+		canvas.width = window_width;
+		canvas.height = window_height;
+	}
+	
+	function windowXtoGameX(x) {
+		return (x - window_halfWidth);
+	}
+	
+	function windowYtoGameY(y) {
+		return (y - window_halfHeight);
+	}
+	
+	// [r, g, b]
+	var colors = [
+		[255, 130,   7],   // orange
+		[255,   7, 139],   // magenta
+		//[254, 255,   0],   // yellow
+		[  7, 255, 171],   // aquamarine
+		[255,  14,   7],   // red
+		[ 81, 255,   7],   // lime
+		[  7, 191, 255],   // pale blue
+		[  7, 133, 255],   // blue
+		[205,   7, 255]   // purple
+	];
+	
+	function chooseRandomColor() {
+		return colors[ Math.floor(Math.random() * colors.length) ];
+		//return [Math.floor(Math.random() * (255 - 0 + 1) + 0), Math.floor(Math.random() * (255 - 0 + 1) + 0), Math.floor(Math.random() * (255 - 0 + 1) + 0)]   // truly random color
+	}
+	
+	function darkenColor(color) {
+		var strokeDiff = 0.85;
+		
+		return [
+			Math.max(0, Math.round( (color[0] * strokeDiff) )),
+			Math.max(0, Math.round( (color[1] * strokeDiff) )),
+			Math.max(0, Math.round( (color[2] * strokeDiff) ))
+		];
+	}
+	
+	
+	
+	/*** Pens ***/
+	
+		function Pen() {
+			this.refreshColor();
+		}
+		
+		Pen.prototype = {
+			'points':				[],
+			'lineWidth':			2,
+			'color':				"",
+			'is_drawing':			false,
+			'drawing_stay_seconds':	1,   // number of seconds after drawing stops that it should remain full opacity
+			'drawing_fade_seconds':	0.7,   // number of seconds a drawing should 
+			'draw_life':			0,   // number of seconds left to draw
+			'draw_opacity':			1,   // 0-1 draw opacity	
+			
+			'refreshColor': function() {
+				var newColor = chooseRandomColor();
+				
+				this.color = "rgb("+ newColor.join(",") +")";
+			},
+			
+			'_resetPen': function() {
+				// totally reset pen data
+				this.points = [];   // reset points array
+				this.draw_life = 0;   // reset draw life to 0
+				this.draw_opacity = 1;   // reset opacity
+			},
+			
+			'startDrawing': function(x, y) {
+				//console.log("Start: "+ x +"x"+ y);
+				
+				this.is_drawing = true;
+				
+				this.points = [x, y];
+				this.draw_life = 0;
+				this.draw_opacity = 1;
+			},
+			
+			'movePen': function(x, y) {
+				//console.log("Move: "+ x +"x"+ y);
+				
+				this.points.push(x);
+				this.points.push(y);
+			},
+			
+			'stopDrawing': function() {
+				//console.log("End drawing");
+				
+				this.is_drawing = false;
+				
+				if(this.points.length > 2) {
+					this.draw_life = (this.drawing_stay_seconds + this.drawing_fade_seconds);
+				} else {
+					this._resetPen();
+				}
+			},
+			
+			'isDrawing': function() {
+				return this.is_drawing;
+			},
+			
+			'update': function(dt) {
+				if(!this.is_drawing && (this.draw_life > 0)) {
+					this.draw_life -= dt;
+					
+					if(this.draw_life >= this.drawing_stay_seconds) {
+						this.draw_opacity = 1;
+					} else if(this.draw_life > 0) {
+						this.draw_opacity = (this.draw_life / this.drawing_fade_seconds);
+					} else {
+						this._resetPen();
+					}
+				}
+			},
+			
+			'draw': function() {
+				//var num_points = (this.points.length / 2);
+				
+				//if(!this.is_drawing && !this.draw_life) {
+				//	return;
+				//}
+				
+				context.globalAlpha = this.draw_opacity;
+				context.beginPath();
+				context.lineWidth = this.lineWidth;
+				context.strokeStyle = this.color;
+				context.lineCap = "round";
+				
+				context.moveTo(this.points[0], this.points[1]);
+				
+				for(var j = 2, k = this.points.length; j < k; j += 2) {
+					// @todo - save d(x/y) instead of raw points
+					context.lineTo(this.points[ j ], this.points[ (j + 1) ]);
+				}
+				
+				context.stroke();
+				
+				context.globalAlpha = 1;
+			}
+		};
+	
+	
+	function draw_grid() {
+		var grid_size = 20;
+		
+		// save context before translating context
+		context.save();
+		
+		context.translate((window_halfWidth * -1), (window_halfHeight * -1));
+		
+		var grid_start_x = 0;
+		var grid_start_y = 0;
+		
+		// camera dimensions
+		grid_start_x -= ( ( window_halfWidth * -1 ) % grid_size );
+		grid_start_y -= ( ( window_halfHeight * -1 ) % grid_size );
+		
+		context.beginPath();
+		context.lineWidth = 1;
+		context.strokeStyle = "#dee6ea";
+		
+		for(var grid_x = grid_start_x; grid_x <= window_width; grid_x += grid_size) {
+			context.moveTo(grid_x, 0);
+			context.lineTo(grid_x, window_height);
+		}
+		
+		for(var grid_y = grid_start_y; grid_y <= window_height; grid_y += grid_size) {
+			context.moveTo(0, grid_y);
+			context.lineTo(window_width, grid_y);
+		}
+		
+		context.stroke();
+		
+		context.restore();
+	}
+	
+	function draw_leaderboard() {
+		
+	}
+	
+	function draw_game_fps() {
+		var playerScoreText = Math.floor(game_fps) +" FPS",
+			fontSize = 12,
+			windowPadding = 6,
+			boxPadding = 6;
+		
+		context.save();
+		
+		context.scale(1, 1);
+		context.translate( ((window_halfWidth * -1) + windowPadding), ((window_halfHeight * -1) + windowPadding) );
+		
+		// setup font context
+		context.font = "normal "+ fontSize +"pt Verdana";
+		
+		var textMetrics = context.measureText(playerScoreText);
+		
+		// draw text container box
+		context.beginPath();
+		
+		context.rect(0, 0, (boxPadding + textMetrics.width + boxPadding), (boxPadding + fontSize + boxPadding));
+		context.fillStyle = "rgba(0, 0, 0, 0.3)";
+		context.fill();
+		
+		// draw text
+		context.fillStyle = "#ffffff";
+		context.textAlign = "left";
+		context.textBaseline = "hanging";
+		context.fillText(playerScoreText, boxPadding, boxPadding);
+		
+		context.restore();
+	}
+	
+	
+	/*** Game Logic ***/
+	
+		function update(dt) {
+			//console.log("mouse_screenPosition = "+ mouse_screenPosition.x +"x"+ mouse_screenPosition.y);
+			
+			// update pens
+			for(var obj in drawings) {
+				drawings[ obj ].update(dt);
+			}
+		}
+		
+		function draw() {
+			context.clearRect(0, 0, canvas.width, canvas.height);
+			
+			context.save();
+			
+			context.translate(window_halfWidth, window_halfHeight);
+			
+			// draw grid
+			draw_grid();
+			
+			// draw pens
+			for(var obj in drawings) {
+				drawings[ obj ].draw();
+			}
+			
+			// draw leaderboard
+			draw_leaderboard();
+			
+			// draw fps
+			draw_game_fps();
+			
+			context.restore();
+		}
+	
+	
+	var loop__time = new Date().getTime();
+	var fps = 0, last_fps = 0;
+	
+	function game_loop() {
+		var now = new Date().getTime(),
+			dt = ((now - loop__time) / 1000);
+		
+		window.requestAnimationFrame(game_loop);
+		
+		fps += 1;
+		last_fps += dt;
+		
+		if(last_fps > 1) {
+			//console.log("FPS: "+ fps);
+			game_fps = fps;
+			
+			fps = 0;
+			last_fps %= 1;
+		}
+		
+		loop__time = now;
+		
+		if(can_render) {
+			// update logic
+			update(dt);
+			
+			// draw
+			draw();
+		}
+	}
+	
+	
+	jQuery(document).ready(function($) {
+		var canvas_el = $("#screen");
+		
+		// create player
+		player_drawing_id = Math.floor((Math.random() * 10000));
+		player_drawing_id = player_drawing_id.toString();
+		
+		//drawings[ player_drawing_id ] = new Pen(prompt("Name?"));
+		drawings[ player_drawing_id ] = new Pen("Don_"+ player_drawing_id);
+		
+		$(window).on({
+			'load': function() {
+				// window finishes loading
+				is_drawing = false;
+				
+				calibrateCameraSize($(window).width(), $(window).height());
+			},
+			'resize': function() {
+				// resize window
+				is_drawing = false;
+				
+				calibrateCameraSize($(window).width(), $(window).height());
+			},
+			'focus': function() {
+				// browser gains focus
+				is_drawing = false;
+			},
+			'blur': function() {
+				// browser loses focus
+				is_drawing = false;
+			}
+		});
+		
+		// capture mouse events
+		$(document).on({
+			'mousedown': function(e) {
+				if(e.which == 1) {
+					//can_render = !can_render;
+					
+					// start player drawing
+					drawings[ player_drawing_id ].startDrawing(windowXtoGameX(e.pageX), windowYtoGameY(e.pageY));
+				}
+			},
+			'mousemove': function(e) {
+				if(drawings[ player_drawing_id ].isDrawing()) {
+					// Player is drawing, move player pen
+					drawings[ player_drawing_id ].movePen(windowXtoGameX(e.pageX), windowYtoGameY(e.pageY));
+				}
+				
+				//mouse_screenPosition.x = e.pageX;
+				//mouse_screenPosition.y = e.pageY;
+			},
+			'mouseup': function(e) {
+				if(e.which == 1) {
+					// Stop player from drawing
+					drawings[ player_drawing_id ].stopDrawing();
+				}
+			}
+		});
+		
+		// capture keydown
+		$(document).on('keydown', function(e) {
+			// prevent repeated key calls
+			input_active[ e.which ] = true;
+		});
+		
+		// release input status
+		$(document).on('keyup', function(e) {
+			input_active[ e.which ] = false;
+		});
+		
+		
+		/*
+			connection = new WebSocket("ws://"+window.location.hostname+":9008");
+			
+			connection.onopen = function() {
+				console.log("Connection opened");
+				connection.send(nickname);
+				
+				document.getElementById("form").onsubmit = function (event) {
+					var msg = document.getElementById("msg");
+					
+					if(msg.value) {
+						connection.send(msg.value)
+					}
+					
+					msg.value = "";
+					
+					event.preventDefault();
+				}	;
+			};
+			
+			connection.onclose = function() {
+				console.log("Connection closed");
+			};
+			
+			connection.onerror = function() {
+				console.error("Connection error");
+			};
+			
+			connection.onmessage = function (event) {
+				var div = document.createElement("div");
+				div.textContent = event.data;
+				
+				document.body.appendChild(div);
+			};
+		*/
+		
+		
+		// start game
+		game_loop();
+	});
+	
